@@ -4,7 +4,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from model import Net
 from torchsummary import torchsummary
-from data_loader import get_data_loaders, add_noise, cutout
+from data_loader import get_data_loaders
 import sys
 import os
 
@@ -18,46 +18,54 @@ def test_parameter_count(model):
 
 def test_batch_norm_usage(model):
     """Test if model uses Batch Normalization"""
-    has_bn = any(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules())
-    bn_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d))
-    assert has_bn, '❌ Model does not use Batch Normalization'
+    bn_count = sum(1 for m in model.modules() if isinstance(m, nn.BatchNorm2d))
+    assert bn_count >= 6, f'❌ Model should have at least 6 BatchNorm layers, found {bn_count}'
     print(f'✓ BatchNorm test passed: Found {bn_count} BatchNorm layers')
     return bn_count
 
 def test_dropout_usage(model):
     """Test if model uses Dropout"""
-    has_dropout = any(isinstance(m, torch.nn.Dropout) for m in model.modules())
-    dropout_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.Dropout))
-    assert has_dropout, '❌ Model does not use Dropout'
-    print(f'✓ Dropout test passed: Found {dropout_count} Dropout layers')
+    dropout_layers = [m for m in model.modules() if isinstance(m, nn.Dropout)]
+    dropout_count = len(dropout_layers)
+    dropout_values = [layer.p for layer in dropout_layers]
+    
+    assert dropout_count >= 3, f'❌ Model should have at least 3 Dropout layers, found {dropout_count}'
+    assert all(p >= 0.1 for p in dropout_values), '❌ Dropout values should be >= 0.1'
+    print(f'✓ Dropout test passed: Found {dropout_count} Dropout layers with p={dropout_values[0]}')
     return dropout_count
 
 def test_gap_usage(model):
     """Test if model uses Global Average Pooling"""
-    has_gap = any(isinstance(m, torch.nn.AdaptiveAvgPool2d) for m in model.modules())
-    assert has_gap, '❌ Model does not use Global Average Pooling'
-    print('✓ GAP test passed: Found Global Average Pooling layer')
+    gap_layers = [m for m in model.modules() if isinstance(m, nn.AdaptiveAvgPool2d)]
+    assert len(gap_layers) > 0, '❌ Model does not use Global Average Pooling'
+    assert gap_layers[0].output_size == (1, 1), '❌ GAP should reduce spatial dimensions to 1x1'
+    print('✓ GAP test passed: Found correct Global Average Pooling layer')
 
 def train_and_test(model, device, train_loader, test_loader, epochs=20):
     """Train and test the model"""
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, verbose=True)
-    best_acc = 0
+    optimizer = optim.Adam(model.parameters(), lr=0.01/10, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=0.01,
+        epochs=epochs,
+        steps_per_epoch=len(train_loader),
+        pct_start=0.2,
+        div_factor=10,
+        final_div_factor=100
+    )
     
+    best_acc = 0
     for epoch in range(1, epochs + 1):
         # Training
         model.train()
         for batch_idx, (data, target) in enumerate(train_loader):
-            # Apply additional augmentations
-            data = add_noise(data)
-            data = cutout(data)
-            
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
             loss = nn.functional.nll_loss(output, target)
             loss.backward()
             optimizer.step()
+            scheduler.step()
             
             if batch_idx % 100 == 0:
                 print(f'Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
@@ -65,9 +73,8 @@ def train_and_test(model, device, train_loader, test_loader, epochs=20):
         
         # Testing
         model.eval()
-        correct = 0
-        total = 0
         test_loss = 0
+        correct = 0
         with torch.no_grad():
             for data, target in test_loader:
                 data, target = data.to(device), target.to(device)
@@ -75,10 +82,9 @@ def train_and_test(model, device, train_loader, test_loader, epochs=20):
                 test_loss += nn.functional.nll_loss(output, target, reduction='sum').item()
                 pred = output.argmax(dim=1, keepdim=True)
                 correct += pred.eq(target.view_as(pred)).sum().item()
-                total += target.size(0)
         
         test_loss /= len(test_loader.dataset)
-        accuracy = 100. * correct / total
+        accuracy = 100. * correct / len(test_loader.dataset)
         print(f'Epoch {epoch}:')
         print(f'  Test Loss: {test_loss:.4f}')
         print(f'  Test Accuracy: {accuracy:.2f}%')
@@ -87,8 +93,6 @@ def train_and_test(model, device, train_loader, test_loader, epochs=20):
             best_acc = accuracy
             torch.save(model.state_dict(), 'best_model.pt')
             print(f'  New best accuracy: {best_acc:.2f}%')
-        
-        scheduler.step(accuracy)
         
         if accuracy >= 99.4:
             print(f'✓ Reached target accuracy of 99.4% in {epoch} epochs')
@@ -108,20 +112,22 @@ def main():
         
         # Initialize model
         model = Net().to(device)
+        print('\nModel Architecture:')
+        torchsummary.summary(model, (1, 28, 28))
         
         # Run architecture tests
-        print('Testing model architecture...')
+        print('\nTesting model architecture...')
         total_params = test_parameter_count(model)
         bn_count = test_batch_norm_usage(model)
         dropout_count = test_dropout_usage(model)
         test_gap_usage(model)
         
-        # Load dataset with new data loader
-        print('Loading MNIST dataset with augmentations...')
-        train_loader, test_loader = get_data_loaders(batch_size=128)
+        # Load dataset with augmentations
+        print('\nLoading MNIST dataset with augmentations...')
+        train_loader, test_loader = get_data_loaders(batch_size=64)
         
         # Train and test
-        print('Starting training and testing...')
+        print('\nStarting training and testing...')
         best_acc, epochs = train_and_test(model, device, train_loader, test_loader)
         
         # Final assertions
