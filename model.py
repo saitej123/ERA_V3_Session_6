@@ -15,7 +15,7 @@ class Net(nn.Module):
         self.conv3 = nn.Conv2d(8, 8, 3, padding=1)  # 28x28x8
         self.bn3 = nn.BatchNorm2d(8)
         self.pool1 = nn.MaxPool2d(2, 2)  # 14x14x8
-        self.dropout1 = nn.Dropout(0.1)
+        self.dropout1 = nn.Dropout(0.15)
         
         # Second Block with Residual
         self.conv4 = nn.Conv2d(8, 12, 3, padding=1)  # 14x14x12
@@ -23,12 +23,12 @@ class Net(nn.Module):
         self.conv5 = nn.Conv2d(12, 12, 3, padding=1)  # 14x14x12
         self.bn5 = nn.BatchNorm2d(12)
         self.pool2 = nn.MaxPool2d(2, 2)  # 7x7x12
-        self.dropout2 = nn.Dropout(0.1)
+        self.dropout2 = nn.Dropout(0.15)
         
         # Third Block with Dilation
         self.conv6 = nn.Conv2d(12, 10, 3, padding=2, dilation=2)  # 7x7x10
         self.bn6 = nn.BatchNorm2d(10)
-        self.dropout3 = nn.Dropout(0.1)
+        self.dropout3 = nn.Dropout(0.15)
         
         # Global Average Pooling
         self.gap = nn.AdaptiveAvgPool2d(1)  # 1x1x10

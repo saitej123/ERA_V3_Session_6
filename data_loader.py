@@ -7,7 +7,7 @@ def add_noise(image, noise_factor=0.05):
     """Add random noise to image"""
     if torch.rand(1).item() > 0.5:  # 50% chance to add noise
         noise = torch.randn_like(image) * noise_factor
-        return image + noise
+        return torch.clamp(image + noise, 0., 1.)
     return image
 
 def cutout(image, n_holes=1, length=8):
@@ -31,18 +31,57 @@ def cutout(image, n_holes=1, length=8):
         return image * mask
     return image
 
-def get_data_loaders(batch_size=128):
-    # Basic transforms with mild augmentation
+class MixUp:
+    """Perform mixup on images and targets"""
+    def __init__(self, alpha=0.2):
+        self.alpha = alpha
+    
+    def __call__(self, batch):
+        images, targets = batch
+        
+        # Generate mixup weights
+        weights = torch.distributions.Beta(self.alpha, self.alpha).sample(torch.Size([len(images)]))
+        weights = weights.to(images.device)
+        
+        # Create shuffled indices
+        indices = torch.randperm(len(images))
+        
+        # Mix the images
+        mixed_images = (weights.view(-1, 1, 1, 1) * images + 
+                       (1 - weights.view(-1, 1, 1, 1)) * images[indices])
+        
+        # Mix the targets (using one-hot encoding)
+        targets_onehot = torch.zeros(len(targets), 10, device=targets.device)
+        targets_onehot.scatter_(1, targets.view(-1, 1), 1)
+        targets_shuffled = targets_onehot[indices]
+        mixed_targets = (weights.view(-1, 1) * targets_onehot + 
+                        (1 - weights.view(-1, 1)) * targets_shuffled)
+        
+        return mixed_images, mixed_targets
+
+def get_data_loaders(batch_size=64):
+    # Advanced augmentation pipeline
     train_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
         transforms.RandomApply([
             transforms.RandomAffine(
-                degrees=10,  # Mild rotation
-                translate=(0.1, 0.1),  # Mild translation
-                scale=(0.9, 1.1),  # Mild scaling
+                degrees=(-10, 10),
+                translate=(0.1, 0.1),
+                scale=(0.9, 1.1),
+                shear=(-5, 5),
+                fill=0
             )
-        ], p=0.3)  # 30% chance of applying augmentation
+        ], p=0.7),
+        transforms.RandomApply([
+            transforms.RandomPerspective(
+                distortion_scale=0.2,
+                p=0.5,
+                fill=0
+            )
+        ], p=0.3),
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,)),
+        transforms.Lambda(lambda x: add_noise(x, noise_factor=0.05)),
+        transforms.Lambda(lambda x: cutout(x, n_holes=1, length=8))
     ])
     
     test_transform = transforms.Compose([
@@ -50,7 +89,7 @@ def get_data_loaders(batch_size=128):
         transforms.Normalize((0.1307,), (0.3081,))
     ])
     
-    # Load datasets
+    # Load datasets with advanced augmentation
     train_dataset = datasets.MNIST(
         './data', 
         train=True, 
@@ -58,44 +97,28 @@ def get_data_loaders(batch_size=128):
         transform=train_transform
     )
     
-    # Use moderate subset size
-    indices = list(range(len(train_dataset)))
-    subset_size = 30000  # Use 30k samples
-    
-    # Select balanced samples
-    targets = train_dataset.targets.numpy()
-    selected_indices = []
-    samples_per_class = subset_size // 10
-    
-    for class_idx in range(10):
-        class_indices = np.where(targets == class_idx)[0]
-        selected_indices.extend(class_indices[:samples_per_class])
-    
-    # Shuffle the selected indices
-    np.random.shuffle(selected_indices)
-    train_dataset = Subset(train_dataset, selected_indices)
+    # Use full training set
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+        drop_last=True
+    )
     
     test_dataset = datasets.MNIST(
-        './data', 
+        './data',
         train=False,
         transform=test_transform
     )
     
-    # Create data loaders
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size, 
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4,
-        drop_last=True
-    )
-    
     test_loader = DataLoader(
-        test_dataset, 
+        test_dataset,
         batch_size=batch_size,
-        pin_memory=True,
-        num_workers=4
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
     )
     
     return train_loader, test_loader 
