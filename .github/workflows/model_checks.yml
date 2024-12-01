@@ -1,20 +1,87 @@
-name: Model Tests
+name: Model Architecture Tests
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   test:
+    name: Check Model Architecture Requirements
     runs-on: ubuntu-latest
+    
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: '3.8'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install torch torchvision torchsummary
-    - name: Run tests
+        pip install -r requirements.txt
+
+    - name: Check Parameter Count
       run: |
-        python test.py 
+        python -c "
+        import torch
+        from model import Net
+        model = Net()
+        total_params = sum(p.numel() for p in model.parameters())
+        print(f'Total parameters: {total_params}')
+        assert total_params < 20000, f'Model has {total_params} parameters, exceeding limit of 20,000'
+        "
+
+    - name: Check BatchNorm Usage
+      run: |
+        python -c "
+        import torch
+        from model import Net
+        model = Net()
+        has_bn = any(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules())
+        assert has_bn, 'Model does not use Batch Normalization'
+        bn_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d))
+        print(f'Number of BatchNorm layers: {bn_count}')
+        "
+
+    - name: Check Dropout Usage
+      run: |
+        python -c "
+        import torch
+        from model import Net
+        model = Net()
+        has_dropout = any(isinstance(m, torch.nn.Dropout) for m in model.modules())
+        assert has_dropout, 'Model does not use Dropout'
+        dropout_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.Dropout))
+        print(f'Number of Dropout layers: {dropout_count}')
+        "
+
+    - name: Check GAP Usage
+      run: |
+        python -c "
+        import torch
+        from model import Net
+        model = Net()
+        has_gap = any(isinstance(m, torch.nn.AdaptiveAvgPool2d) for m in model.modules())
+        assert has_gap, 'Model does not use Global Average Pooling'
+        print('Global Average Pooling layer found')
+        "
+
+    - name: Print Model Summary
+      run: |
+        python -c "
+        import torch
+        from model import Net
+        from torchsummary import torchsummary
+        model = Net()
+        print('Model Architecture Summary:')
+        torchsummary.summary(model, (1, 28, 28))
+        "
