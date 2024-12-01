@@ -16,21 +16,10 @@ jobs:
       with:
         python-version: '3.8'
 
-    - name: Cache pip and data
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cache/pip
-          data
-        key: ${{ runner.os }}-pip-data-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-data-
-          ${{ runner.os }}-pip-
-
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install torch torchvision tqdm torchsummary
+        pip install torch==2.0.1 torchvision==0.15.2 tqdm torchsummary
 
     - name: Run Tests
       run: |

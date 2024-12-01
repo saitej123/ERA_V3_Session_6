@@ -8,9 +8,31 @@ import sys
 import os
 from datetime import datetime
 
-def log_step(message):
-    timestamp = datetime.now().strftime('%H:%M:%S')
-    print(f'[{timestamp}] {message}')
+def load_mnist():
+    """Load MNIST dataset with train/validation split"""
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+    
+    # Load training data
+    train_set = datasets.MNIST(
+        root='./data',
+        train=True,
+        download=True,
+        transform=transform
+    )
+    
+    # Split into train and validation
+    train_size = 50000
+    val_size = 10000
+    train_set, val_set = torch.utils.data.random_split(train_set, [train_size, val_size])
+    
+    # Create data loaders
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=64, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=1000)
+    
+    return train_loader, val_loader
 
 def test_parameter_count(model):
     """Test if model has less than 20k parameters"""
@@ -99,41 +121,26 @@ def train_and_validate(model, device, train_loader, val_loader, epochs=20):
 def main():
     try:
         # Setup
-        log_step('Starting model tests...')
-        use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda" if use_cuda else "cpu")
+        print('Starting model tests...')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f'Using device: {device}')
         
         # Initialize model
         model = Net().to(device)
         
         # Run architecture tests
-        log_step('Testing model architecture...')
+        print('Testing model architecture...')
         total_params = test_parameter_count(model)
         bn_count = test_batch_norm_usage(model)
         dropout_count = test_dropout_usage(model)
         test_gap_usage(model)
         
-        # Load and prepare dataset
-        log_step('Preparing dataset...')
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
-        ])
-        
-        # Using torchvision's MNIST dataset directly
-        full_dataset = datasets.MNIST(root='data', train=True, download=True, transform=transform)
-        
-        # Split into train and validation
-        train_size = 50000
-        val_size = 10000
-        train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size])
-        
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1000)
+        # Load dataset
+        print('Loading MNIST dataset...')
+        train_loader, val_loader = load_mnist()
         
         # Train and validate
-        log_step('Starting training and validation...')
+        print('Starting training and validation...')
         best_acc, epochs = train_and_validate(model, device, train_loader, val_loader)
         
         # Final assertions
