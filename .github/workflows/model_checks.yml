@@ -85,3 +85,102 @@ jobs:
         print('Model Architecture Summary:')
         torchsummary.summary(model, (1, 28, 28))
         "
+
+    - name: Test Model Accuracy and Epochs
+      run: |
+        python -c "
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        from torchvision import datasets, transforms
+        from model import Net
+        from tqdm import tqdm
+        import sys
+
+        def test(model, device, test_loader):
+            model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data, target in test_loader:
+                    data, target = data.to(device), target.to(device)
+                    output = model(data)
+                    pred = output.argmax(dim=1, keepdim=True)
+                    correct += pred.eq(target.view_as(pred)).sum().item()
+                    total += target.size(0)
+            return 100. * correct / total
+
+        def train_and_test():
+            # Setup device
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            
+            # Data loading
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ])
+            
+            train_dataset = datasets.MNIST('../data', train=True, download=True, transform=transform)
+            
+            # Split training data into train and validation (50k/10k)
+            train_size = 50000
+            val_size = 10000
+            train_dataset, val_dataset = torch.utils.data.random_split(
+                train_dataset, [train_size, val_size]
+            )
+            
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128)
+            val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1000)
+            
+            # Model setup
+            model = Net().to(device)
+            optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=1)
+            
+            # Training
+            best_acc = 0
+            epochs_without_improvement = 0
+            max_epochs = 20
+            
+            for epoch in range(1, max_epochs + 1):
+                model.train()
+                for batch_idx, (data, target) in enumerate(train_loader):
+                    data, target = data.to(device), target.to(device)
+                    optimizer.zero_grad()
+                    output = model(data)
+                    loss = nn.functional.nll_loss(output, target)
+                    loss.backward()
+                    optimizer.step()
+                
+                # Validation
+                acc = test(model, device, val_loader)
+                print(f'Epoch {epoch}: Validation Accuracy: {acc:.2f}%')
+                
+                if acc > best_acc:
+                    best_acc = acc
+                    epochs_without_improvement = 0
+                else:
+                    epochs_without_improvement += 1
+                
+                scheduler.step(acc)
+                
+                # Early stopping
+                if acc >= 99.4:
+                    print(f'Reached target accuracy of 99.4% in {epoch} epochs')
+                    assert epoch <= 20, f'Took {epoch} epochs, exceeding limit of 20'
+                    return True
+                
+                if epochs_without_improvement >= 5:
+                    break
+            
+            assert best_acc >= 99.4, f'Failed to achieve 99.4% accuracy. Best accuracy: {best_acc:.2f}%'
+            return False
+
+        # Run training and testing
+        print('Starting model training and validation...')
+        success = train_and_test()
+        if success:
+            print('All accuracy and epoch requirements met!')
+        else:
+            sys.exit(1)
+        "
