@@ -21,10 +21,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install torch==2.0.1 torchvision==0.15.2 tqdm torchsummary
 
-    - name: Create directories
+    - name: Create data directory
       run: |
-        mkdir -p MNIST/raw
-        mkdir -p MNIST/processed
+        mkdir -p data
 
     - name: Run Tests
       run: |

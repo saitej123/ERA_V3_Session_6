@@ -7,23 +7,23 @@ from torchsummary import torchsummary
 import sys
 import os
 
-def load_mnist():
-    """Load MNIST dataset"""
+def load_fashion_mnist():
+    """Load FashionMNIST dataset"""
     # Define basic transform
     transform = transforms.Compose([
         transforms.ToTensor()
     ])
     
     # Load train and test sets
-    train_set = datasets.MNIST(
-        root='MNIST',  # Using MNIST directory
+    train_set = datasets.FashionMNIST(
+        root='data',
         train=True,
         download=True,
         transform=transform
     )
     
-    test_set = datasets.MNIST(
-        root='MNIST',  # Using MNIST directory
+    test_set = datasets.FashionMNIST(
+        root='data',
         train=False,
         download=True,
         transform=transform
@@ -121,8 +121,8 @@ def train_and_test(model, device, train_loader, test_loader, epochs=20):
 
 def main():
     try:
-        # Create MNIST directory if it doesn't exist
-        os.makedirs('MNIST', exist_ok=True)
+        # Create data directory if it doesn't exist
+        os.makedirs('data', exist_ok=True)
         
         # Setup
         print('Starting model tests...')
@@ -140,8 +140,8 @@ def main():
         test_gap_usage(model)
         
         # Load dataset
-        print('Loading MNIST dataset...')
-        train_loader, test_loader = load_mnist()
+        print('Loading FashionMNIST dataset...')
+        train_loader, test_loader = load_fashion_mnist()
         
         # Train and test
         print('Starting training and testing...')
