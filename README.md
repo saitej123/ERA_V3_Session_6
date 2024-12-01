@@ -134,7 +134,7 @@ python train.py
 ```bash
 python test.py
 ```
-
+[![Model Architecture Tests](https://github.com/saitej123/ERA_V3_Session_6/actions/workflows/model_checks.yml/badge.svg)](https://github.com/saitej123/ERA_V3_Session_6/actions/workflows/model_checks.yml) 
 ## Future Improvements
 
 1. Increase model capacity while staying under 20k params
