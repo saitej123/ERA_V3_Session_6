@@ -6,33 +6,34 @@ from model import Net
 from torchsummary import torchsummary
 import sys
 import os
-from datetime import datetime
 
 def load_mnist():
-    """Load MNIST dataset with train/validation split"""
+    """Load MNIST dataset"""
+    # Define basic transform
     transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
+        transforms.ToTensor()
     ])
     
-    # Load training data
+    # Load train and test sets
     train_set = datasets.MNIST(
-        root='./data',
+        root='MNIST',  # Using MNIST directory
         train=True,
         download=True,
         transform=transform
     )
     
-    # Split into train and validation
-    train_size = 50000
-    val_size = 10000
-    train_set, val_set = torch.utils.data.random_split(train_set, [train_size, val_size])
+    test_set = datasets.MNIST(
+        root='MNIST',  # Using MNIST directory
+        train=False,
+        download=True,
+        transform=transform
+    )
     
     # Create data loaders
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=64, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_set, batch_size=1000)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=128, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=32)
     
-    return train_loader, val_loader
+    return train_loader, test_loader
 
 def test_parameter_count(model):
     """Test if model has less than 20k parameters"""
@@ -64,8 +65,8 @@ def test_gap_usage(model):
     assert has_gap, '❌ Model does not use Global Average Pooling'
     print('✓ GAP test passed: Found Global Average Pooling layer')
 
-def train_and_validate(model, device, train_loader, val_loader, epochs=20):
-    """Train and validate the model"""
+def train_and_test(model, device, train_loader, test_loader, epochs=20):
+    """Train and test the model"""
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, verbose=True)
     best_acc = 0
@@ -85,25 +86,25 @@ def train_and_validate(model, device, train_loader, val_loader, epochs=20):
                 print(f'Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
                       f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.4f}')
         
-        # Validation
+        # Testing
         model.eval()
         correct = 0
         total = 0
-        val_loss = 0
+        test_loss = 0
         with torch.no_grad():
-            for data, target in val_loader:
+            for data, target in test_loader:
                 data, target = data.to(device), target.to(device)
                 output = model(data)
-                val_loss += nn.functional.nll_loss(output, target, reduction='sum').item()
+                test_loss += nn.functional.nll_loss(output, target, reduction='sum').item()
                 pred = output.argmax(dim=1, keepdim=True)
                 correct += pred.eq(target.view_as(pred)).sum().item()
                 total += target.size(0)
         
-        val_loss /= len(val_loader.dataset)
+        test_loss /= len(test_loader.dataset)
         accuracy = 100. * correct / total
         print(f'Epoch {epoch}:')
-        print(f'  Validation Loss: {val_loss:.4f}')
-        print(f'  Validation Accuracy: {accuracy:.2f}%')
+        print(f'  Test Loss: {test_loss:.4f}')
+        print(f'  Test Accuracy: {accuracy:.2f}%')
         
         if accuracy > best_acc:
             best_acc = accuracy
@@ -120,6 +121,9 @@ def train_and_validate(model, device, train_loader, val_loader, epochs=20):
 
 def main():
     try:
+        # Create MNIST directory if it doesn't exist
+        os.makedirs('MNIST', exist_ok=True)
+        
         # Setup
         print('Starting model tests...')
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -137,11 +141,11 @@ def main():
         
         # Load dataset
         print('Loading MNIST dataset...')
-        train_loader, val_loader = load_mnist()
+        train_loader, test_loader = load_mnist()
         
-        # Train and validate
-        print('Starting training and validation...')
-        best_acc, epochs = train_and_validate(model, device, train_loader, val_loader)
+        # Train and test
+        print('Starting training and testing...')
+        best_acc, epochs = train_and_test(model, device, train_loader, test_loader)
         
         # Final assertions
         assert best_acc >= 99.4, f'❌ Failed to achieve 99.4% accuracy. Best accuracy: {best_acc:.2f}%'
