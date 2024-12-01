@@ -4,36 +4,9 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from model import Net
 from torchsummary import torchsummary
+from data_loader import get_data_loaders, add_noise, cutout
 import sys
 import os
-
-def load_fashion_mnist():
-    """Load FashionMNIST dataset"""
-    # Define basic transform
-    transform = transforms.Compose([
-        transforms.ToTensor()
-    ])
-    
-    # Load train and test sets
-    train_set = datasets.FashionMNIST(
-        root='data',
-        train=True,
-        download=True,
-        transform=transform
-    )
-    
-    test_set = datasets.FashionMNIST(
-        root='data',
-        train=False,
-        download=True,
-        transform=transform
-    )
-    
-    # Create data loaders
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=128, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=32)
-    
-    return train_loader, test_loader
 
 def test_parameter_count(model):
     """Test if model has less than 20k parameters"""
@@ -75,6 +48,10 @@ def train_and_test(model, device, train_loader, test_loader, epochs=20):
         # Training
         model.train()
         for batch_idx, (data, target) in enumerate(train_loader):
+            # Apply additional augmentations
+            data = add_noise(data)
+            data = cutout(data)
+            
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
@@ -139,9 +116,9 @@ def main():
         dropout_count = test_dropout_usage(model)
         test_gap_usage(model)
         
-        # Load dataset
-        print('Loading FashionMNIST dataset...')
-        train_loader, test_loader = load_fashion_mnist()
+        # Load dataset with new data loader
+        print('Loading MNIST dataset with augmentations...')
+        train_loader, test_loader = get_data_loaders(batch_size=128)
         
         # Train and test
         print('Starting training and testing...')
