@@ -121,10 +121,13 @@ def main():
             transforms.Normalize((0.1307,), (0.3081,))
         ])
         
-        dataset = datasets.MNIST('data', train=True, download=True, transform=transform)
+        # Using torchvision's MNIST dataset directly
+        full_dataset = datasets.MNIST(root='data', train=True, download=True, transform=transform)
+        
+        # Split into train and validation
         train_size = 50000
         val_size = 10000
-        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+        train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size])
         
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1000)
