@@ -5,54 +5,6 @@ from model import Net
 from torchsummary import torchsummary
 import sys
 import os
-from tqdm import tqdm
-import requests
-
-def download_mnist():
-    """Download MNIST dataset manually if not present"""
-    print('\nChecking MNIST dataset...')
-    data_dir = '../data/MNIST/raw'
-    processed_dir = '../data/MNIST/processed'
-    os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(processed_dir, exist_ok=True)
-
-    # URLs for MNIST dataset files
-    base_url = 'https://ossci-datasets.s3.amazonaws.com/mnist'
-    files = {
-        'train-images-idx3-ubyte.gz': 'train-images-idx3-ubyte.gz',
-        'train-labels-idx1-ubyte.gz': 'train-labels-idx1-ubyte.gz',
-        't10k-images-idx3-ubyte.gz': 't10k-images-idx3-ubyte.gz',
-        't10k-labels-idx1-ubyte.gz': 't10k-labels-idx1-ubyte.gz'
-    }
-
-    # Download files if they don't exist
-    for filename, remote_file in files.items():
-        filepath = os.path.join(data_dir, filename)
-        if not os.path.exists(filepath):
-            url = f'{base_url}/{remote_file}'
-            print(f'Downloading {filename}...')
-            try:
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                
-                with open(filepath, 'wb') as f, tqdm(
-                    desc=filename,
-                    total=total_size,
-                    unit='iB',
-                    unit_scale=True,
-                    unit_divisor=1024,
-                ) as pbar:
-                    for data in response.iter_content(chunk_size=1024):
-                        size = f.write(data)
-                        pbar.update(size)
-                print(f'Successfully downloaded {filename}')
-            except Exception as e:
-                print(f'Error downloading {filename}: {str(e)}')
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                return False
-    return True
 
 def test_parameter_count(model):
     """Test if model has less than 20k parameters"""
@@ -94,27 +46,27 @@ def test_accuracy(model, device):
     """Test model accuracy on validation split"""
     print(f'\nTest 5: Model Accuracy Check')
     
-    # First ensure dataset is downloaded
-    if not download_mnist():
-        print('❌ Failed to download MNIST dataset')
-        return False
-    
-    # Data loading
     try:
+        # Data loading
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
         ])
         
-        # Load full training dataset
+        # Load training dataset
         print('Loading MNIST dataset...')
-        train_dataset = datasets.MNIST('../data', train=True, download=False, transform=transform)
+        dataset = datasets.MNIST(
+            root='./data',  # Changed from '../data' to './data'
+            train=True,
+            download=True,
+            transform=transform
+        )
         
         # Split into train and validation (50k/10k)
         train_size = 50000
         val_size = 10000
         _, val_dataset = torch.utils.data.random_split(
-            train_dataset, [train_size, val_size]
+            dataset, [train_size, val_size]
         )
         
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1000)
@@ -122,7 +74,7 @@ def test_accuracy(model, device):
         
     except Exception as e:
         print(f'❌ Failed to load dataset: {str(e)}')
-        return False
+        raise
     
     model.eval()
     correct = 0
@@ -145,7 +97,7 @@ def test_accuracy(model, device):
         
     except Exception as e:
         print(f'❌ Error during accuracy testing: {str(e)}')
-        return False
+        raise
 
 def print_model_summary(model):
     """Print model architecture summary"""
