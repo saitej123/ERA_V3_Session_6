@@ -32,68 +32,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Check Parameter Count
+    - name: Run All Tests
       run: |
-        python -c "
-        import torch
-        from model import Net
-        model = Net()
-        total_params = sum(p.numel() for p in model.parameters())
-        print(f'Total parameters: {total_params}')
-        assert total_params < 20000, f'Model has {total_params} parameters, exceeding limit of 20,000'
-        "
-
-    - name: Check BatchNorm Usage
-      run: |
-        python -c "
-        import torch
-        from model import Net
-        model = Net()
-        has_bn = any(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules())
-        assert has_bn, 'Model does not use Batch Normalization'
-        bn_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d))
-        print(f'Number of BatchNorm layers: {bn_count}')
-        "
-
-    - name: Check Dropout Usage
-      run: |
-        python -c "
-        import torch
-        from model import Net
-        model = Net()
-        has_dropout = any(isinstance(m, torch.nn.Dropout) for m in model.modules())
-        assert has_dropout, 'Model does not use Dropout'
-        dropout_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.Dropout))
-        print(f'Number of Dropout layers: {dropout_count}')
-        "
-
-    - name: Check GAP Usage
-      run: |
-        python -c "
-        import torch
-        from model import Net
-        model = Net()
-        has_gap = any(isinstance(m, torch.nn.AdaptiveAvgPool2d) for m in model.modules())
-        assert has_gap, 'Model does not use Global Average Pooling'
-        print('Global Average Pooling layer found')
-        "
-
-    - name: Download MNIST Dataset
-      run: |
-        python -c "
-        from torchvision import datasets
-        import os
-        # Create data directory
-        os.makedirs('./data', exist_ok=True)
-        # Download dataset
-        print('Downloading MNIST dataset...')
-        datasets.MNIST('./data', train=True, download=True)
-        datasets.MNIST('./data', train=False, download=True)
-        print('Dataset download completed!')
-        "
-
-    - name: Run Training and Validation
-      run: |
+        echo "::group::Model Architecture Tests"
         python -c "
         import torch
         import torch.nn as nn
@@ -102,107 +43,140 @@ jobs:
         from model import Net
         import os
         import sys
-        
-        def test(model, device, test_loader):
-            model.eval()
-            correct = 0
-            total = 0
-            with torch.no_grad():
-                for data, target in test_loader:
-                    data, target = data.to(device), target.to(device)
-                    output = model(data)
-                    pred = output.argmax(dim=1, keepdim=True)
-                    correct += pred.eq(target.view_as(pred)).sum().item()
-                    total += target.size(0)
-            return 100. * correct / total
-        
-        def train_and_test():
-            try:
-                # Setup device
-                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                print(f'Using device: {device}')
-                
-                # Data loading
-                transform = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.1307,), (0.3081,))
-                ])
-                
-                print('Loading MNIST dataset...')
-                dataset = datasets.MNIST('./data', train=True, transform=transform)
-                
-                # Split into train and validation (50k/10k)
-                train_size = 50000
-                val_size = 10000
-                train_dataset, val_dataset = torch.utils.data.random_split(
-                    dataset, [train_size, val_size]
-                )
-                
-                train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128)
-                val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1000)
-                print('Dataset loaded successfully')
-                
-                # Model setup
-                print('Setting up model...')
-                model = Net().to(device)
-                optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-                scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=1)
-                
+        from datetime import datetime
+
+        def log_step(message):
+            timestamp = datetime.now().strftime('%H:%M:%S')
+            print(f'[{timestamp}] {message}')
+
+        try:
+            # Test 1: Parameter Count
+            log_step('Test 1: Checking Parameter Count')
+            model = Net()
+            total_params = sum(p.numel() for p in model.parameters())
+            print(f'Total parameters: {total_params:,}')
+            assert total_params < 20000, f'❌ Model has {total_params:,} parameters, exceeding limit of 20,000'
+            print(f'✓ Parameter count test passed: {total_params:,} parameters (under 20k limit)')
+
+            # Test 2: BatchNorm Usage
+            log_step('Test 2: Checking BatchNorm Usage')
+            has_bn = any(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules())
+            bn_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d))
+            assert has_bn, '❌ Model does not use Batch Normalization'
+            print(f'✓ BatchNorm test passed: Found {bn_count} BatchNorm layers')
+
+            # Test 3: Dropout Usage
+            log_step('Test 3: Checking Dropout Usage')
+            has_dropout = any(isinstance(m, torch.nn.Dropout) for m in model.modules())
+            dropout_count = sum(1 for m in model.modules() if isinstance(m, torch.nn.Dropout))
+            assert has_dropout, '❌ Model does not use Dropout'
+            print(f'✓ Dropout test passed: Found {dropout_count} Dropout layers')
+
+            # Test 4: GAP Usage
+            log_step('Test 4: Checking GAP Usage')
+            has_gap = any(isinstance(m, torch.nn.AdaptiveAvgPool2d) for m in model.modules())
+            assert has_gap, '❌ Model does not use Global Average Pooling'
+            print('✓ GAP test passed: Found Global Average Pooling layer')
+
+            # Test 5: Dataset Download and Loading
+            log_step('Test 5: Preparing Dataset')
+            transform_train = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,)),
+                transforms.RandomRotation(5),
+                transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+            ])
+            
+            transform_test = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ])
+            
+            print('Downloading/Loading MNIST dataset...')
+            train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform_train)
+            
+            # Split into train and validation (50k/10k)
+            train_size = 50000
+            val_size = 10000
+            train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
+            
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+            val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1000)
+            print('✓ Dataset preparation completed')
+
+            # Test 6: Model Training and Validation
+            log_step('Test 6: Training and Validation')
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            print(f'Using device: {device}')
+            
+            model = Net().to(device)
+            optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, verbose=True)
+            
+            best_acc = 0
+            for epoch in range(1, 21):
                 # Training
-                best_acc = 0
-                epochs_without_improvement = 0
-                max_epochs = 20
+                model.train()
+                for batch_idx, (data, target) in enumerate(train_loader):
+                    data, target = data.to(device), target.to(device)
+                    optimizer.zero_grad()
+                    output = model(data)
+                    loss = nn.functional.nll_loss(output, target)
+                    loss.backward()
+                    optimizer.step()
+                    
+                    if batch_idx % 100 == 0:
+                        print(f'Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
+                              f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.4f}')
                 
-                print('Starting training...')
-                for epoch in range(1, max_epochs + 1):
-                    # Training
-                    model.train()
-                    for batch_idx, (data, target) in enumerate(train_loader):
+                # Validation
+                model.eval()
+                correct = 0
+                total = 0
+                val_loss = 0
+                with torch.no_grad():
+                    for data, target in val_loader:
                         data, target = data.to(device), target.to(device)
-                        optimizer.zero_grad()
                         output = model(data)
-                        loss = nn.functional.nll_loss(output, target)
-                        loss.backward()
-                        optimizer.step()
-                        
-                        if batch_idx % 100 == 0:
-                            print(f'Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
-                                  f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
-                    
-                    # Validation
-                    acc = test(model, device, val_loader)
-                    print(f'Epoch {epoch}: Validation Accuracy: {acc:.2f}%')
-                    
-                    if acc > best_acc:
-                        best_acc = acc
-                        epochs_without_improvement = 0
-                        torch.save(model.state_dict(), 'best_model.pt')
-                    else:
-                        epochs_without_improvement += 1
-                    
-                    scheduler.step(acc)
-                    
-                    if acc >= 99.4:
-                        print(f'Reached target accuracy of 99.4% in {epoch} epochs')
-                        assert epoch <= 20, f'Took {epoch} epochs, exceeding limit of 20'
-                        return True
-                    
-                    if epochs_without_improvement >= 5:
-                        print('Early stopping triggered')
-                        break
+                        val_loss += nn.functional.nll_loss(output, target, reduction='sum').item()
+                        pred = output.argmax(dim=1, keepdim=True)
+                        correct += pred.eq(target.view_as(pred)).sum().item()
+                        total += target.size(0)
                 
-                assert best_acc >= 99.4, f'Failed to achieve 99.4% accuracy. Best accuracy: {best_acc:.2f}%'
-                return False
+                val_loss /= len(val_loader.dataset)
+                accuracy = 100. * correct / total
+                print(f'Epoch {epoch}:')
+                print(f'  Validation Loss: {val_loss:.4f}')
+                print(f'  Validation Accuracy: {accuracy:.2f}%')
                 
-            except Exception as e:
-                print(f'Error during training: {str(e)}')
-                sys.exit(1)
-        
-        # Run training and testing
-        print('Starting model training and validation...')
-        success = train_and_test()
-        if success:
-            print('All accuracy and epoch requirements met!')
-        else:
+                if accuracy > best_acc:
+                    best_acc = accuracy
+                    torch.save(model.state_dict(), 'best_model.pt')
+                    print(f'  New best accuracy: {best_acc:.2f}%')
+                
+                scheduler.step(accuracy)
+                
+                if accuracy >= 99.4:
+                    print(f'✓ Reached target accuracy of 99.4% in {epoch} epochs')
+                    assert epoch <= 20, f'❌ Took {epoch} epochs, exceeding limit of 20'
+                    break
+            
+            assert best_acc >= 99.4, f'❌ Failed to achieve 99.4% accuracy. Best accuracy: {best_acc:.2f}%'
+            print(f'✓ Final test passed: Achieved {best_acc:.2f}% accuracy in under 20 epochs')
+            
+            print('\n✓ All tests passed successfully! ✓')
+            print(f'Summary:')
+            print(f'- Parameters: {total_params:,} (< 20k)')
+            print(f'- BatchNorm layers: {bn_count}')
+            print(f'- Dropout layers: {dropout_count}')
+            print(f'- Uses GAP: Yes')
+            print(f'- Best accuracy: {best_acc:.2f}%')
+            
+        except AssertionError as e:
+            print(f'\n❌ Test failed: {str(e)}')
+            sys.exit(1)
+        except Exception as e:
+            print(f'\n❌ Unexpected error: {str(e)}')
             sys.exit(1)
         "
+        echo "::endgroup::"

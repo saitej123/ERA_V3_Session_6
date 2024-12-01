@@ -5,50 +5,59 @@ import torch.nn.functional as F
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        # Input Block
-        self.conv1 = nn.Conv2d(1, 8, 3, padding=1)  # input: 28x28x1 output: 28x28x8 RF: 3x3
-        self.bn1 = nn.BatchNorm2d(8)
-        self.dropout1 = nn.Dropout(0.1)
-
-        # CONV Block 1
-        self.conv2 = nn.Conv2d(8, 16, 3, padding=1)  # input: 28x28x8 output: 28x28x16 RF: 5x5
+        # Input Block: maintaining spatial dimensions
+        self.conv1 = nn.Conv2d(1, 10, 3, padding=1)  # 28x28x10
+        self.bn1 = nn.BatchNorm2d(10)
+        
+        # First Block: slight channel increase
+        self.conv2 = nn.Conv2d(10, 16, 3, padding=1)  # 28x28x16
         self.bn2 = nn.BatchNorm2d(16)
-        self.dropout2 = nn.Dropout(0.1)
-
-        # Transition Block 1
-        self.pool1 = nn.MaxPool2d(2, 2)  # output: 14x14x16 RF: 6x6
-        self.conv3 = nn.Conv2d(16, 8, 1)  # output: 14x14x8 RF: 6x6
-        self.bn3 = nn.BatchNorm2d(8)
-
-        # CONV Block 2
-        self.conv4 = nn.Conv2d(8, 16, 3, padding=1)  # output: 14x14x16 RF: 10x10
+        self.pool1 = nn.MaxPool2d(2, 2)  # 14x14x16
+        self.dropout1 = nn.Dropout(0.15)
+        
+        # Second Block: maintain channels, extract features
+        self.conv3 = nn.Conv2d(16, 16, 3, padding=1)  # 14x14x16
+        self.bn3 = nn.BatchNorm2d(16)
+        self.conv4 = nn.Conv2d(16, 16, 3, padding=1)  # 14x14x16
         self.bn4 = nn.BatchNorm2d(16)
-        self.dropout3 = nn.Dropout(0.1)
-
-        # Transition Block 2
-        self.pool2 = nn.MaxPool2d(2, 2)  # output: 7x7x16 RF: 12x12
-        self.conv5 = nn.Conv2d(16, 8, 1)  # output: 7x7x8 RF: 12x12
-        self.bn5 = nn.BatchNorm2d(8)
-
-        # Output Block
-        self.conv6 = nn.Conv2d(8, 16, 3)  # output: 5x5x16 RF: 20x20
-        self.bn6 = nn.BatchNorm2d(16)
-        self.dropout4 = nn.Dropout(0.1)
+        self.pool2 = nn.MaxPool2d(2, 2)  # 7x7x16
+        self.dropout2 = nn.Dropout(0.15)
         
-        # GAP Layer
-        self.gap = nn.AdaptiveAvgPool2d(1)  # output: 1x1x16
+        # Third Block: increase channels for final feature extraction
+        self.conv5 = nn.Conv2d(16, 32, 3, padding=1)  # 7x7x32
+        self.bn5 = nn.BatchNorm2d(32)
+        self.dropout3 = nn.Dropout(0.15)
         
-        # Final Conv to get 10 outputs
-        self.conv7 = nn.Conv2d(16, 10, 1)  # output: 1x1x10
+        # Global Average Pooling
+        self.gap = nn.AdaptiveAvgPool2d(1)  # 1x1x32
+        
+        # Final 1x1 conv instead of linear
+        self.conv6 = nn.Conv2d(32, 10, 1)  # 1x1x10
 
     def forward(self, x):
-        x = self.dropout1(self.bn1(F.relu(self.conv1(x))))
-        x = self.dropout2(self.bn2(F.relu(self.conv2(x))))
-        x = self.bn3(F.relu(self.conv3(self.pool1(x))))
-        x = self.dropout3(self.bn4(F.relu(self.conv4(x))))
-        x = self.bn5(F.relu(self.conv5(self.pool2(x))))
-        x = self.dropout4(self.bn6(F.relu(self.conv6(x))))
+        # Input block
+        x = F.relu(self.bn1(self.conv1(x)))
+        
+        # First block
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.pool1(x)
+        x = self.dropout1(x)
+        
+        # Second block with residual connection
+        identity = x
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = self.bn4(self.conv4(x))
+        x = F.relu(x + identity)  # residual connection
+        x = self.pool2(x)
+        x = self.dropout2(x)
+        
+        # Third block
+        x = F.relu(self.bn5(self.conv5(x)))
+        x = self.dropout3(x)
+        
+        # GAP and final conv
         x = self.gap(x)
-        x = self.conv7(x)
+        x = self.conv6(x)
         x = x.view(-1, 10)
+        
         return F.log_softmax(x, dim=1) 
